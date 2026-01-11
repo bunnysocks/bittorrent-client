@@ -1,3 +1,5 @@
+'use strict'
+
 import fs from "fs";
 import bencode from "bencode";
 import {getPeers} from "./tracker.js";
