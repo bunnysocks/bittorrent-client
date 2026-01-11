@@ -1,7 +1,11 @@
+'use strict'
+
 import dgram from 'dgram'
 import {Buffer} from 'buffer'
 import {URL} from 'node:url'
 import crypto from 'crypto'
+import { infoHash, size } from './torrent-parser.js'
+import { genId } from './util.js'
 
 const Uint8ArrayDecoder = (content) => {
     const decoder = new TextDecoder('utf-8')
@@ -58,10 +62,57 @@ const parseConnResp = (resp) => {
     }
 }
 
-const buildAnnounceReq = () => {
-
+const buildAnnounceReq = (connId, torrent, port=6881) => {
+    const buffer = Buffer.allocUnsafe(98)
+    //connection id
+    connId.copy(buffer, 0)
+    //action (announce - 1)
+    buffer.writeUint32BE(1, 8)
+    //transaction id
+    crypto.randomBytes(4).copy(buffer, 12)
+    //info Hash
+    infoHash(torrent).copy(buffer, 16)
+    //peer Id
+    genId().copy(buffer, 36)
+    //downloaded
+    Buffer.alloc(8).copy(buffer, 56)
+    //left 
+    size(torrent).copy(buffer, 64)
+    //uploaded
+    Buffer.alloc(8).copy(buffer, 72)
+    //event
+    buffer.writeUInt32BE(0, 80)
+    //ip addr
+    buffer.writeUInt32BE(0, 84)
+    //key
+    crypto.randomBytes(4).copy(buffer, 88)
+    //num_want
+    buffer.writeUInt32BE(-1, 92)
+    //port
+    buffer.writeUInt16BE(port, 96)
+    
+    return buffer
 }
 
-const parseAnnounceResp = () => {
+const parseAnnounceResp = (resp) => {
+    const group = (iterable, size) => {
+        let groups = []
+        for(let i=0; i<iterable.length; i+=size) {
+            groups.push(iterable.slice(i, i+size))
+        }
+        return groups
+    }
 
+    return {
+        action: resp.readUInt32BE(0),
+        transactionId: resp.readUInt32BE(4),
+        leechers: resp.readUInt32BE(8),
+        seeders: resp.readUInt32BE(12),
+        peers: group(resp.slice(20), 6).map(address => {
+            return {
+                ip: address.slice(0, 4).join('.'),
+                port: address.readUInt16BE(4)
+            }
+        })
+    }
 }
